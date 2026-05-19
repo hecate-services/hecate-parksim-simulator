@@ -33,7 +33,7 @@ RUN rebar3 as prod tar
 #----------------------------------------------------------------------
 # Stage 2 — runtime: slim image, just the release tarball
 #----------------------------------------------------------------------
-FROM docker.io/alpine:3.20
+FROM docker.io/alpine:3.22
 
 RUN apk add --no-cache libstdc++ ncurses-libs openssl ca-certificates
 
