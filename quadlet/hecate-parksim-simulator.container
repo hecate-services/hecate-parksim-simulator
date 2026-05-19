@@ -1,0 +1,41 @@
+# Quadlet unit for hecate-parksim-simulator.
+#
+# Runs on Hecate INFRASTRUCTURE nodes (BEAM cluster, dedicated relay
+# boxes, cooperative-contributed service nodes). NOT on user laptops.
+#
+# Lives in hecate-gitops/system/ and is symlinked into
+# /etc/containers/systemd/ by the reconciler. Managed by the
+# system-wide systemd, not a user instance.
+
+[Unit]
+Description=Hecate service: hecate-parksim-simulator
+After=network-online.target macula-station.service
+Wants=network-online.target
+Requires=macula-station.service
+
+[Container]
+ContainerName=hecate-parksim-simulator
+Image=ghcr.io/hecate-services/hecate-parksim-simulator:latest
+AutoUpdate=registry
+
+# Realm-issued service-principal cert (read-only).
+Volume=/etc/hecate/secrets/hecate-parksim-simulator:/etc/hecate/secrets:ro,Z
+
+# Per-service state — bulk drive on the beam nodes (`/bulk0`).
+Volume=/bulk0/hecate/hecate-parksim-simulator:/var/lib/hecate-parksim-simulator:Z
+
+# Local macula-station socket (the SDK speaks to this).
+Volume=/run/macula:/run/macula:Z
+
+# Run as the dedicated `hecate` service user, never root.
+User=hecate
+Group=hecate
+
+EnvironmentFile=/etc/hecate/gitops/system/hecate-parksim-simulator.env
+
+[Service]
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
