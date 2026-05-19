@@ -1,0 +1,9 @@
+{application, simulate_lots, [
+    {description, "Per-lot operational cadence (sweeps, calibrations, maintenance, evac drill)"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, parksim_simulator, simulate_clock]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

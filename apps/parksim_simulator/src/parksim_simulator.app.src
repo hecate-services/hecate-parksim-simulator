@@ -1,0 +1,10 @@
+{application, parksim_simulator, [
+    {description, "Shared mesh client + scenario config for the parksim simulator umbrella"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {parksim_simulator_app, []}},
+    {applications, [kernel, stdlib, crypto, macula, hecate_om]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

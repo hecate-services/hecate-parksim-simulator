@@ -1,0 +1,9 @@
+{application, simulate_clock, [
+    {description, "Scaled wall-clock for the parksim simulator"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

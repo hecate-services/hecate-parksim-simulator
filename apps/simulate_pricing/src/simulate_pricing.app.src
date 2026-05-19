@@ -1,0 +1,9 @@
+{application, simulate_pricing, [
+    {description, "Rate + permit cadence for the parksim simulator"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, parksim_simulator, simulate_clock]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

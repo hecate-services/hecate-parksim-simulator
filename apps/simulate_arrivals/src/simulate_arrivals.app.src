@@ -1,0 +1,10 @@
+{application, simulate_arrivals, [
+    {description, "NHPP-driven vehicle arrivals per lot"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, parksim_simulator, simulate_clock,
+                    simulate_sessions]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

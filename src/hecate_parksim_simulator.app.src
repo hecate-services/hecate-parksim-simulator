@@ -1,0 +1,26 @@
+{application, hecate_parksim_simulator, [
+    {description, "Realm-bound traffic simulator for the parksim service family"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {hecate_parksim_simulator_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        cowboy,
+        macula,
+        hecate_om,
+        parksim_simulator,
+        simulate_clock,
+        simulate_arrivals,
+        simulate_sessions,
+        simulate_lots,
+        simulate_pricing
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [
+        {"Codeberg", "https://codeberg.org/hecate-services/hecate-parksim-simulator"}
+    ]}
+]}.
