@@ -26,6 +26,13 @@
          suspend_permit/0, reinstate_permit/0,
          transfer_permit/0, revoke_permit/0, mark_permit_expired/0]).
 
+%% lane equipment (physical-device-first): the simulator drives the
+%% hardware stimuli; the device sagas do the rest.
+-export([entry_island_detect_vehicle/0, entry_island_present_permit/0,
+         exit_island_detect_vehicle/0, exit_island_read_card/0,
+         exit_island_present_permit/0,
+         terminal_accept_card/0, terminal_tender_payment/0]).
+
 %% --- entry2exit ---
 enter_vehicle()         -> <<"hecate-parksim-entry2exit.enter_vehicle">>.
 trigger_exit()          -> <<"hecate-parksim-entry2exit.trigger_exit">>.
@@ -74,3 +81,16 @@ reinstate_permit()    -> <<"hecate-parksim-pricing.reinstate_parking_permit">>.
 transfer_permit()     -> <<"hecate-parksim-pricing.transfer_parking_permit">>.
 revoke_permit()       -> <<"hecate-parksim-pricing.revoke_parking_permit">>.
 mark_permit_expired() -> <<"hecate-parksim-pricing.mark_parking_permit_expired">>.
+
+%% --- entry island ---
+entry_island_detect_vehicle() -> <<"hecate-parksim-entry-island.detect_vehicle">>.
+entry_island_present_permit() -> <<"hecate-parksim-entry-island.present_parking_permit">>.
+
+%% --- exit island ---
+exit_island_detect_vehicle()  -> <<"hecate-parksim-exit-island.detect_vehicle">>.
+exit_island_read_card()       -> <<"hecate-parksim-exit-island.read_parking_card">>.
+exit_island_present_permit()  -> <<"hecate-parksim-exit-island.present_parking_permit">>.
+
+%% --- payment terminal ---
+terminal_accept_card()    -> <<"hecate-parksim-payment-terminal.accept_parking_card">>.
+terminal_tender_payment() -> <<"hecate-parksim-payment-terminal.tender_payment">>.

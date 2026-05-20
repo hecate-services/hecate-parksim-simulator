@@ -59,13 +59,26 @@ fire_one(State) ->
     Now = erlang:system_time(second),
     {GapSec, State1} = sample_gap(Now, State),
     simulate_clock:sleep_simulated(GapSec * 1000),
-    {Plate, NewRng} = parksim_simulator_plates:draw(
+    {Plate, Rng1} = parksim_simulator_plates:draw(
         State1#state.rng, State1#state.plates),
-    {ok, _} = simulate_sessions:start_session(#{
-        lot   => State1#state.lot,
-        plate => Plate
+    PlateValue = maps:get(value, Plate),
+    {U, Rng2} = rand:uniform_s(Rng1),
+    Credential = decide_credential(U, (State1#state.lot)#parksim_lot.permit_share,
+                                   PlateValue),
+    {ok, _} = simulate_visit:start_visit(#{
+        lot        => State1#state.lot,
+        plate      => PlateValue,
+        credential => Credential
     }),
-    State1#state{rng = NewRng}.
+    State1#state{rng = Rng2}.
+
+%% A fraction of arrivals (the lot's permit_share) are permit holders;
+%% the rest take a ticket. Permit visits carry a permit_ref derived from
+%% the plate (server-side validity is a documented TODO on the islands).
+decide_credential(U, PermitShare, Plate) when U < PermitShare ->
+    {permit, <<"permit-", Plate/binary>>};
+decide_credential(_U, _PermitShare, _Plate) ->
+    ticket.
 
 %% Sample the next inter-arrival gap (in seconds) by thinning. We
 %% compute λ_max over a 6-hour lookahead and accept candidate gaps

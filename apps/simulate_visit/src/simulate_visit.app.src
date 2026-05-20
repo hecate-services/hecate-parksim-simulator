@@ -1,5 +1,5 @@
-{application, simulate_sessions, [
-    {description, "Per-session command ladder for the parksim simulator"},
+{application, simulate_visit, [
+    {description, "Physical-device-first visit walk: emulates a driver+vehicle through the lane equipment"},
     {vsn, "0.1.0"},
     {registered, []},
     {applications, [kernel, stdlib, parksim_simulator, simulate_clock]},

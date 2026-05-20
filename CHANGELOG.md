@@ -2,6 +2,26 @@
 
 All notable changes to **hecate-parksim-simulator** are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **Physical-device-first rebuild** (PLAN_PARKSIM_LANE_EQUIPMENT.md §7).
+  The simulator now emulates the lane *hardware* instead of firing
+  logical session commands. Retired the `simulate_sessions` app;
+  added `simulate_visit` (the per-visit walk) with three device-stimulus
+  emitters: `simulate_entry_island`, `simulate_payment_terminal`,
+  `simulate_exit_island`. A visit carries a physical credential
+  (minted `card_id` for ticket visits, or a `permit_ref` for permit
+  visits) threaded through every device call.
+- `simulate_arrivals` now decides ticket vs permit per arrival from the
+  lot's `permit_share` and starts a `simulate_visit`.
+- `simulate_lots` `open_lot` now declares the lot's lane-equipment
+  inventory inline (one entry island, one exit island, one terminal) so
+  the equipment divisions' commission PMs fan out.
+- Added entry-island / exit-island / payment-terminal capability
+  constants.
+
 ## [0.1.0] - 2026-05-19
 
 ### Added

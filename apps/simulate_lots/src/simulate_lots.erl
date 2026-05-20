@@ -40,12 +40,19 @@ boot() ->
     Mesh = parksim_simulator_mesh,
     lists:foreach(
         fun(#parksim_lot{id = LotId, display_name = Name, capacity = Cap}) ->
+            %% Single-lane lot: one entry island, one exit island, one
+            %% pay-on-foot terminal — declared inline so the commission
+            %% PMs in the equipment divisions fan out per device.
             _ = Mesh:call(Caps:open_lot(),
-                          #{lot_id   => LotId,
-                            name     => Name,
-                            capacity => Cap,
-                            zone_map => <<"{}">>,
-                            at       => Now}),
+                          #{lot_id            => LotId,
+                            name              => Name,
+                            capacity          => Cap,
+                            zone_map          => <<"{}">>,
+                            entry_islands     => [#{lane => <<"1">>,
+                                                    equipment_profile => #{card_dispense_window_ms => 4000}}],
+                            exit_islands      => [#{lane => <<"1">>}],
+                            payment_terminals => [#{location => <<"lobby">>}],
+                            at                => Now}),
             _ = Mesh:call(Caps:set_capacity(),
                           #{lot_id   => LotId,
                             level    => <<"all">>,

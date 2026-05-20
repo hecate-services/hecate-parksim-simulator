@@ -3,7 +3,7 @@
     {vsn, "0.1.0"},
     {registered, []},
     {applications, [kernel, stdlib, parksim_simulator, simulate_clock,
-                    simulate_sessions]},
+                    simulate_visit]},
     {env, []},
     {modules, []},
     {licenses, ["Apache-2.0"]}
