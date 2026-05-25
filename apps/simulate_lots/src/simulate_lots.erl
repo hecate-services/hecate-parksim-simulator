@@ -32,19 +32,27 @@ evacuate(LotId) ->
                 reason => <<"operator-drill">>,
                 at     => simulate_clock:now_iso8601()}).
 
-%% Open every lot, set capacity, assign a small zone map. Idempotent.
+%% Initiate every lot, set capacity, assign a small zone map. Idempotent.
+%%
+%% Each simulated lot belongs to a single conceptual `sim-facility`.
+%% The facility is not separately initiated here — the facility-side
+%% listener will silently no-op if the named facility doesn't exist
+%% locally. Future work: initiate the sim-facility before the lots so
+%% the binding actually lands.
 boot() ->
-    Preset = parksim_simulator_config:preset(),
-    Now = simulate_clock:now_iso8601(),
-    Caps = parksim_simulator_capabilities,
-    Mesh = parksim_simulator_mesh,
+    Preset       = parksim_simulator_config:preset(),
+    Now          = simulate_clock:now_iso8601(),
+    Caps         = parksim_simulator_capabilities,
+    Mesh         = parksim_simulator_mesh,
+    FacilityId   = <<"sim-facility">>,
     lists:foreach(
         fun(#parksim_lot{id = LotId, display_name = Name, capacity = Cap}) ->
             %% Single-lane lot: one entry island, one exit island, one
             %% pay-on-foot terminal — declared inline so the commission
             %% PMs in the equipment divisions fan out per device.
-            _ = Mesh:call(Caps:open_lot(),
+            _ = Mesh:call(Caps:initiate_lot(),
                           #{lot_id            => LotId,
+                            facility_id       => FacilityId,
                             name              => Name,
                             capacity          => Cap,
                             zone_map          => <<"{}">>,

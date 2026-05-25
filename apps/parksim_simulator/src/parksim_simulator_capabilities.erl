@@ -12,7 +12,7 @@
          reprice/0, mark_overstayed/0]).
 
 %% lot
--export([open_lot/0, close_lot/0, set_capacity/0,
+-export([initiate_lot/0, close_lot/0, set_capacity/0,
          assign_zone_purpose/0, record_sensor_calibration/0,
          start_maintenance_window/0, end_maintenance_window/0,
          record_sweep/0, evacuate_lot/0, restore_lot/0]).
@@ -47,7 +47,7 @@ reprice()               -> <<"hecate-parksim-entry2exit.reprice_parking_session"
 mark_overstayed()       -> <<"hecate-parksim-entry2exit.mark_overstayed">>.
 
 %% --- lot ---
-open_lot()                  -> <<"hecate-parksim-lot.open_parking_lot">>.
+initiate_lot()              -> <<"hecate-parksim-lot.initiate_lot">>.
 close_lot()                 -> <<"hecate-parksim-lot.close_parking_lot">>.
 set_capacity()              -> <<"hecate-parksim-lot.set_capacity">>.
 assign_zone_purpose()       -> <<"hecate-parksim-lot.assign_zone_purpose">>.
