@@ -8,24 +8,24 @@
 
 shape() ->
     case os:getenv("PARKSIM_SHAPE") of
-        false -> application:get_env(hecate_parksim_simulator, shape, "city");
+        false -> application:get_env(hecate_parksim, shape, "city");
         S     -> S
     end.
 
 time_scale() ->
     case os:getenv("PARKSIM_TIME_SCALE") of
-        false -> application:get_env(hecate_parksim_simulator, time_scale, 1.0);
+        false -> application:get_env(hecate_parksim, time_scale, 1.0);
         S     -> list_to_float(S)
     end.
 
 seed() ->
     case os:getenv("PARKSIM_SEED") of
-        false -> application:get_env(hecate_parksim_simulator, seed, 0);
+        false -> application:get_env(hecate_parksim, seed, 0);
         S     -> list_to_integer(S)
     end.
 
 include_evacuation() ->
-    application:get_env(hecate_parksim_simulator, include_evacuation, false).
+    application:get_env(hecate_parksim, include_evacuation, false).
 
 %% Returns the active preset.
 -spec preset() -> #parksim_preset{}.

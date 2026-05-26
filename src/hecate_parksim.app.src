@@ -1,0 +1,27 @@
+{application, hecate_parksim, [
+    {description, "Multi-tenant parking simulator — the majestic monolith"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {hecate_parksim_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        cowboy,
+        reckon_db,
+        evoq,
+        reckon_evoq,
+        hecate_om,
+        parksim_simulator,
+        guide_parking_session_lifecycle,
+        simulate_clock,
+        simulate_arrivals,
+        simulate_visit
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [
+        {"Codeberg", "https://codeberg.org/hecate-services/hecate-parksim"}
+    ]}
+]}.

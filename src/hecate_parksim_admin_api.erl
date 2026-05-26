@@ -1,6 +1,6 @@
 %%% @doc Small cowboy admin surface for the simulator. POST endpoints
 %%% mirror the original CLI subcommands: run, event, evacuate.
--module(hecate_parksim_simulator_admin_api).
+-module(hecate_parksim_admin_api).
 
 -export([init/2]).
 

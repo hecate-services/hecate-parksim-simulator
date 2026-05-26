@@ -1,9 +1,9 @@
 {application, parksim_simulator, [
-    {description, "Shared mesh client + scenario config for the parksim simulator umbrella"},
+    {description, "Shared simulator infrastructure (config, clock, plates) for hecate-parksim"},
     {vsn, "0.1.0"},
     {registered, []},
     {mod, {parksim_simulator_app, []}},
-    {applications, [kernel, stdlib, crypto, macula, hecate_om]},
+    {applications, [kernel, stdlib, crypto, hecate_om]},
     {env, []},
     {modules, []},
     {licenses, ["Apache-2.0"]}

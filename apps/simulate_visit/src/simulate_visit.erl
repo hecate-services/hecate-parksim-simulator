@@ -1,28 +1,17 @@
-%%% @doc One physical visit through the lane equipment. Replaces the
-%%% old logical session ladder: the simulator now emulates the
-%%% hardware (a driver + vehicle), and the device divisions
-%%% (entry-island / payment-terminal / exit-island) react. See
-%%% PLAN_PARKSIM_LANE_EQUIPMENT.md §7.
+%%% @doc One simulated parking visit. Dispatches the three session
+%%% events directly via evoq_dispatcher to the tenant store.
 %%%
-%%% A visit holds the physical credential it carries — a `card_id`
-%%% (ticket visit) minted here, or a `permit_ref` + plate (permit
-%%% visit) — and threads it through every device call so the emitted
-%%% events correlate.
-%%%
-%%% NOTE (follow-up): in a live run the entry island's saga mints its
-%%% own card_id when it dispenses; reconciling the simulator's card_id
-%%% with the dispensed one needs a read-back. In dry_run the simulator's
-%%% self-consistent token is what lazyreckon sees.
+%%% Lifecycle: initiate_parking_session -> capture_payment -> archive_parking_session.
+%%% Dwell is log-normal in seconds, clipped to [60, 24h]. ~0.7% of
+%%% visits abandon (never pay, never archive — leaves an orphan
+%%% INITIATED session in the store, which is realistic.)
 -module(simulate_visit).
 
 -export([start_visit/1]).
 
 -include_lib("parksim_simulator/include/parksim_simulator_scenario.hrl").
 
-%% @doc Spawn one visit process. Params:
-%%   lot        :: #parksim_lot{}
-%%   plate      :: binary()
-%%   credential :: ticket | {permit, PermitRef}
+%% @doc Spawn one visit process. Params: #{lot, plate, credential}.
 -spec start_visit(map()) -> {ok, pid()}.
 start_visit(Params) ->
     {ok, proc_lib:spawn(fun() -> run(Params) end)}.
@@ -31,41 +20,75 @@ run(#{lot := Lot, plate := Plate, credential := Credential}) ->
     Rng = rand:seed_s(exsss, {erlang:phash2(self()),
                               erlang:phash2(make_ref()),
                               erlang:system_time(microsecond)}),
-    LotId = Lot#parksim_lot.id,
-    Ctx0  = #{lot_id        => LotId,
-              entry_island  => island_id(LotId, <<"entry">>),
-              exit_island   => island_id(LotId, <<"exit">>),
-              terminal      => terminal_id(LotId),
-              plate         => Plate,
-              credential    => Credential,
-              card_id       => card_id(Credential)},
-    simulate_entry_island:admit(Ctx0),
-    {Dwell, Rng1} = sample_dwell(Rng, Lot),
-    simulate_clock:sleep_simulated(Dwell * 1000),
-    walk_out(roll_abandon(Rng1), Ctx0).
+    LotId     = Lot#parksim_lot.id,
+    SessionId = uuid_v4(),
+    CardId    = card_id(Credential),
+    enter(SessionId, LotId, Plate, CardId),
+    {DwellSec, Rng1} = sample_dwell(Rng, Lot),
+    simulate_clock:sleep_simulated(DwellSec * 1000),
+    case roll_abandon(Rng1) of
+        {true,  _Rng2} -> ok;
+        {false, Rng2}  -> pay_then_archive(SessionId, DwellSec, Credential, Rng2)
+    end.
 
-%% Abandoned visits never leave (no payment, no exit).
-walk_out({true, _Rng}, _Ctx) -> ok;
-walk_out({false, Rng}, Ctx) ->
-    maybe_pay(maps:get(credential, Ctx), Ctx, Rng),
-    simulate_exit_island:egress(Ctx).
+%%--------------------------------------------------------------------
+%% Lifecycle dispatch
 
-%% Ticket visits pay on foot before leaving; permit visits do not.
-maybe_pay(ticket, Ctx, Rng) ->
+enter(SessionId, LotId, Plate, CardId) ->
+    _ = maybe_initiate_parking_session:dispatch(#{
+        session_id => SessionId,
+        lot_id     => LotId,
+        plate      => Plate,
+        card_id    => CardId,
+        entered_at => simulate_clock:now_iso8601()
+    }),
+    ok.
+
+%% Ticket visits pay on foot before leaving; permit visits skip payment.
+pay_then_archive(SessionId, DwellSec, ticket, Rng) ->
     {Pause, _} = uniform_int_s(Rng, 2, 90),
     simulate_clock:sleep_simulated(Pause * 1000),
-    simulate_payment_terminal:pay(Ctx);
-maybe_pay({permit, _Ref}, _Ctx, _Rng) ->
+    Amount = compute_fee_cents(DwellSec),
+    _ = maybe_capture_payment:dispatch(#{
+        session_id   => SessionId,
+        amount_cents => Amount,
+        paid_at      => simulate_clock:now_iso8601()
+    }),
+    archive(SessionId, undefined);
+pay_then_archive(SessionId, _DwellSec, {permit, _Ref}, _Rng) ->
+    %% Permit holders have a pre-paid relationship; archive without
+    %% a payment event. fee_cents winds up undefined on the archive.
+    archive(SessionId, <<"permit">>).
+
+archive(SessionId, Reason) ->
+    _ = maybe_archive_parking_session:dispatch(#{
+        session_id  => SessionId,
+        reason      => Reason,
+        archived_at => simulate_clock:now_iso8601()
+    }),
     ok.
 
 %%--------------------------------------------------------------------
-%% Identity derivation (matches the commission PMs)
+%% Fee model — flat EUR 2.50 / started hour, min EUR 0.50. Crude but
+%% gives the events realistic amount_cents values for the demo.
 
-island_id(LotId, Kind) -> <<LotId/binary, ":", Kind/binary, ":1">>.
-terminal_id(LotId)     -> <<LotId/binary, ":pay:1">>.
+compute_fee_cents(DwellSec) ->
+    HoursStarted = max(1, (DwellSec + 3599) div 3600),
+    max(50, HoursStarted * 250).
 
-card_id(ticket)        -> <<"card-", (hex(crypto:strong_rand_bytes(8)))/binary>>;
-card_id({permit, _})   -> undefined.
+%%--------------------------------------------------------------------
+%% Identity / payload helpers
+
+card_id(ticket)      -> <<"card-", (hex(crypto:strong_rand_bytes(8)))/binary>>;
+card_id({permit, _}) -> undefined.
+
+uuid_v4() ->
+    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
+    C1 = (C band 16#0FFF) bor 16#4000,
+    D1 = (D band 16#3FFF) bor 16#8000,
+    iolist_to_binary(io_lib:format(
+        "~8.16.0B-~4.16.0B-~4.16.0B-~4.16.0B-~12.16.0B",
+        [A, B, C1, D1, E])).
 
 %%--------------------------------------------------------------------
 %% Distributions
@@ -76,7 +99,6 @@ sample_dwell(Rng, #parksim_lot{dwell_mu = Mu, dwell_sigma = Sigma}) ->
     X = math:exp(Mu + Sigma * Z),
     {max(60, min(round(X), 24 * 3600)), Rng1}.
 
-%% ~0.7% of visits abandon (never exit).
 roll_abandon(Rng) ->
     {U, Rng1} = rand:uniform_s(Rng),
     {U =< 0.007, Rng1}.

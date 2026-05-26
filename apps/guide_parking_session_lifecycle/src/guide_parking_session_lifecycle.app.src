@@ -1,0 +1,18 @@
+{application, guide_parking_session_lifecycle, [
+    {description, "Parking session lifecycle (initiate -> paid -> archived)"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {guide_parking_session_lifecycle_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        reckon_db,
+        evoq,
+        reckon_evoq,
+        parksim_simulator
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.
