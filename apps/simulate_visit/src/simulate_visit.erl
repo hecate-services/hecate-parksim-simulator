@@ -82,13 +82,12 @@ compute_fee_cents(DwellSec) ->
 card_id(ticket)      -> <<"card-", (hex(crypto:strong_rand_bytes(8)))/binary>>;
 card_id({permit, _}) -> undefined.
 
+%% Generate a session id that satisfies reckon_db's user_re:
+%%   ^[A-Za-z]+-[A-Fa-f0-9]+$    (single hyphen, hex-only suffix).
+%% UUID-v4 with internal hyphens + uppercase doesn't pass — use
+%% `sess-<32-lowercase-hex>` instead.
 uuid_v4() ->
-    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
-    C1 = (C band 16#0FFF) bor 16#4000,
-    D1 = (D band 16#3FFF) bor 16#8000,
-    iolist_to_binary(io_lib:format(
-        "~8.16.0B-~4.16.0B-~4.16.0B-~4.16.0B-~12.16.0B",
-        [A, B, C1, D1, E])).
+    <<"sess-", (hex(crypto:strong_rand_bytes(16)))/binary>>.
 
 %%--------------------------------------------------------------------
 %% Distributions
