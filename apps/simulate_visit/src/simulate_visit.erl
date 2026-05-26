@@ -21,7 +21,7 @@ run(#{lot := Lot, plate := Plate, credential := Credential}) ->
                               erlang:phash2(make_ref()),
                               erlang:system_time(microsecond)}),
     LotId     = Lot#parksim_lot.id,
-    SessionId = uuid_v4(),
+    SessionId = reckon_gater_stream_id:new(<<"sess">>),
     CardId    = card_id(Credential),
     enter(SessionId, LotId, Plate, CardId),
     {DwellSec, Rng1} = sample_dwell(Rng, Lot),
@@ -81,13 +81,6 @@ compute_fee_cents(DwellSec) ->
 
 card_id(ticket)      -> <<"card-", (hex(crypto:strong_rand_bytes(8)))/binary>>;
 card_id({permit, _}) -> undefined.
-
-%% Generate a session id that satisfies reckon_db's user_re:
-%%   ^[A-Za-z]+-[A-Fa-f0-9]+$    (single hyphen, hex-only suffix).
-%% UUID-v4 with internal hyphens + uppercase doesn't pass — use
-%% `sess-<32-lowercase-hex>` instead.
-uuid_v4() ->
-    <<"sess-", (hex(crypto:strong_rand_bytes(16)))/binary>>.
 
 %%--------------------------------------------------------------------
 %% Distributions
