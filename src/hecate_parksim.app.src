@@ -14,6 +14,7 @@
         hecate_om,
         parksim_simulator,
         guide_parking_session_lifecycle,
+        project_parking_sessions,
         simulate_clock,
         simulate_arrivals,
         simulate_visit

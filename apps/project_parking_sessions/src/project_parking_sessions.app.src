@@ -1,0 +1,17 @@
+{application, project_parking_sessions, [
+    {description, "PRJ: projects parking_session events into a SQLite read model"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {project_parking_sessions_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        evoq,
+        reckon_evoq,
+        esqlite,
+        guide_parking_session_lifecycle
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

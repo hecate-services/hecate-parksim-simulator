@@ -31,7 +31,19 @@ start(_Opts) ->
     %% hecate_om_store helper, this block goes away.
     {ok, SupPid} = hecate_parksim_sup:start_link(),
     ok = ensure_store(),
+    ok = ensure_subscription(),
     {ok, SupPid}.
+
+%% Bridge the event store to evoq projections/handlers (catch-up +
+%% live $all). Started after the store is up; the PRJ app's projection
+%% has already registered its event types (it boots first — see the
+%% project_parking_sessions dep in hecate_parksim.app.src).
+ensure_subscription() ->
+    case evoq_store_subscription:start_link(store_id()) of
+        {ok, _Pid}                    -> ok;
+        {error, {already_started, _}} -> ok;
+        {error, Reason}               -> error({store_subscription_failed, Reason})
+    end.
 
 ensure_store() ->
     Config = #store_config{
