@@ -38,10 +38,10 @@ FROM docker.io/alpine:3.22
 RUN apk add --no-cache libstdc++ ncurses-libs openssl ca-certificates
 
 WORKDIR /app
-COPY --from=builder /build/_build/prod/rel/hecate_parksim_simulator/*.tar.gz /tmp/release.tar.gz
+COPY --from=builder /build/_build/prod/rel/hecate_parksim/*.tar.gz /tmp/release.tar.gz
 RUN tar xf /tmp/release.tar.gz && rm /tmp/release.tar.gz
 
-VOLUME ["/etc/hecate/secrets", "/var/lib/hecate-parksim-simulator"]
+VOLUME ["/etc/hecate/secrets", "/var/lib/hecate-parksim"]
 
-ENTRYPOINT ["/app/bin/hecate_parksim_simulator"]
+ENTRYPOINT ["/app/bin/hecate_parksim"]
 CMD ["foreground"]
