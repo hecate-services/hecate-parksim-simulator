@@ -13,8 +13,10 @@
 
 -export([
     session_id/1, lot_id/1, status_flags/1, plate/1, card_id/1,
-    entered_at/1, paid_at/1, amount_cents/1, archived_at/1, archive_reason/1,
-    has_status/2, is_initiated/1, is_paid/1, is_archived/1
+    entered_at/1, bay_id/1, docked_at/1, undocked_at/1,
+    paid_at/1, amount_cents/1, archived_at/1, archive_reason/1,
+    has_status/2, is_initiated/1, is_docked/1, is_undocked/1,
+    is_paid/1, is_archived/1
 ]).
 
 -type state() :: #parking_session_state{}.
@@ -35,6 +37,19 @@ apply_event(#parking_session_state{status_flags = F} = S,
         plate      = maps:get(plate,      Ev, S#parking_session_state.plate),
         card_id    = maps:get(card_id,    Ev, S#parking_session_state.card_id),
         entered_at = maps:get(entered_at, Ev, S#parking_session_state.entered_at)
+    };
+apply_event(#parking_session_state{status_flags = F} = S,
+            #{event_type := <<"vehicle_docked">>} = Ev) ->
+    S#parking_session_state{
+        status_flags = evoq_bit_flags:set(F, ?SESSION_DOCKED),
+        bay_id    = maps:get(bay_id,    Ev, S#parking_session_state.bay_id),
+        docked_at = maps:get(docked_at, Ev, S#parking_session_state.docked_at)
+    };
+apply_event(#parking_session_state{status_flags = F} = S,
+            #{event_type := <<"vehicle_undocked">>} = Ev) ->
+    S#parking_session_state{
+        status_flags = evoq_bit_flags:set(F, ?SESSION_UNDOCKED),
+        undocked_at  = maps:get(undocked_at, Ev, S#parking_session_state.undocked_at)
     };
 apply_event(#parking_session_state{status_flags = F} = S,
             #{event_type := <<"payment_captured">>} = Ev) ->
@@ -62,6 +77,9 @@ to_map(#parking_session_state{} = S) ->
       plate          => S#parking_session_state.plate,
       card_id        => S#parking_session_state.card_id,
       entered_at     => S#parking_session_state.entered_at,
+      bay_id         => S#parking_session_state.bay_id,
+      docked_at      => S#parking_session_state.docked_at,
+      undocked_at    => S#parking_session_state.undocked_at,
       paid_at        => S#parking_session_state.paid_at,
       amount_cents   => S#parking_session_state.amount_cents,
       archived_at    => S#parking_session_state.archived_at,
@@ -76,6 +94,9 @@ status_flags(#parking_session_state{status_flags = V})     -> V.
 plate(#parking_session_state{plate = V})                   -> V.
 card_id(#parking_session_state{card_id = V})               -> V.
 entered_at(#parking_session_state{entered_at = V})         -> V.
+bay_id(#parking_session_state{bay_id = V})                 -> V.
+docked_at(#parking_session_state{docked_at = V})           -> V.
+undocked_at(#parking_session_state{undocked_at = V})       -> V.
 paid_at(#parking_session_state{paid_at = V})               -> V.
 amount_cents(#parking_session_state{amount_cents = V})     -> V.
 archived_at(#parking_session_state{archived_at = V})       -> V.
@@ -85,5 +106,7 @@ has_status(#parking_session_state{status_flags = F}, Flag) ->
     F band Flag =/= 0.
 
 is_initiated(S) -> has_status(S, ?SESSION_INITIATED).
+is_docked(S)    -> has_status(S, ?SESSION_DOCKED).
+is_undocked(S)  -> has_status(S, ?SESSION_UNDOCKED).
 is_paid(S)      -> has_status(S, ?SESSION_PAID).
 is_archived(S)  -> has_status(S, ?SESSION_ARCHIVED).

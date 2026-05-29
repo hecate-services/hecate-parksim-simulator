@@ -1,10 +1,15 @@
-%%% @doc One simulated parking visit. Dispatches the three session
-%%% events directly via evoq_dispatcher to the tenant store.
+%%% @doc One simulated parking visit. Dispatches the session events
+%%% directly via evoq_dispatcher to the tenant store.
 %%%
-%%% Lifecycle: initiate_parking_session -> capture_payment -> archive_parking_session.
+%%% Physical lifecycle: enter -> dock (park in a bay) -> dwell -> then
+%%% either
+%%%   kiosk: pay -> undock -> exit      (pay on foot before walking back)
+%%%   exit:  undock -> pay  -> exit      (pay at the exit island)
+%%% Permit holders are pre-paid: undock -> exit, no payment event.
+%%%
 %%% Dwell is log-normal in seconds, clipped to [60, 24h]. ~0.7% of
-%%% visits abandon (never pay, never archive — leaves an orphan
-%%% INITIATED session in the store, which is realistic.)
+%%% visits abandon after docking (never undock/pay/exit — a realistic
+%%% orphan: a car left parked).
 -module(simulate_visit).
 
 -export([start_visit/1]).
@@ -24,11 +29,13 @@ run(#{lot := Lot, plate := Plate, credential := Credential}) ->
     SessionId = reckon_gater_stream_id:new(<<"sess">>),
     CardId    = card_id(Credential),
     enter(SessionId, LotId, Plate, CardId),
-    {DwellSec, Rng1} = sample_dwell(Rng, Lot),
+    {BayId, Rng1} = pick_bay(Rng, Lot),
+    dock(SessionId, BayId),
+    {DwellSec, Rng2} = sample_dwell(Rng1, Lot),
     simulate_clock:sleep_simulated(DwellSec * 1000),
-    case roll_abandon(Rng1) of
-        {true,  _Rng2} -> ok;
-        {false, Rng2}  -> pay_then_archive(SessionId, DwellSec, Credential, Rng2)
+    case roll_abandon(Rng2) of
+        {true,  _Rng3} -> ok;
+        {false, Rng3}  -> settle(SessionId, DwellSec, Credential, Rng3)
     end.
 
 %%--------------------------------------------------------------------
@@ -44,21 +51,28 @@ enter(SessionId, LotId, Plate, CardId) ->
     }),
     ok.
 
-%% Ticket visits pay on foot before leaving; permit visits skip payment.
-pay_then_archive(SessionId, DwellSec, ticket, Rng) ->
-    {Pause, _} = uniform_int_s(Rng, 2, 90),
-    simulate_clock:sleep_simulated(Pause * 1000),
-    Amount = compute_fee_cents(DwellSec),
+dock(SessionId, BayId) ->
+    _ = maybe_dock_vehicle:dispatch(#{
+        session_id => SessionId,
+        bay_id     => BayId,
+        docked_at  => simulate_clock:now_iso8601()
+    }),
+    ok.
+
+undock(SessionId) ->
+    _ = maybe_undock_vehicle:dispatch(#{
+        session_id  => SessionId,
+        undocked_at => simulate_clock:now_iso8601()
+    }),
+    ok.
+
+pay(SessionId, AmountCents) ->
     _ = maybe_capture_payment:dispatch(#{
         session_id   => SessionId,
-        amount_cents => Amount,
+        amount_cents => AmountCents,
         paid_at      => simulate_clock:now_iso8601()
     }),
-    archive(SessionId, undefined);
-pay_then_archive(SessionId, _DwellSec, {permit, _Ref}, _Rng) ->
-    %% Permit holders have a pre-paid relationship; archive without
-    %% a payment event. fee_cents winds up undefined on the archive.
-    archive(SessionId, <<"permit">>).
+    ok.
 
 archive(SessionId, Reason) ->
     _ = maybe_archive_parking_session:dispatch(#{
@@ -67,6 +81,28 @@ archive(SessionId, Reason) ->
         archived_at => simulate_clock:now_iso8601()
     }),
     ok.
+
+%% Ticket visits pay at the kiosk (before undocking) or at the exit
+%% island (after undocking) — 50/50. Permit holders skip payment.
+settle(SessionId, DwellSec, ticket, Rng) ->
+    Amount = compute_fee_cents(DwellSec),
+    {PayPoint, Rng1} = roll_pay_point(Rng),
+    {Pause, _Rng2}   = uniform_int_s(Rng1, 2, 90),
+    settle_ticket(SessionId, Amount, Pause, PayPoint);
+settle(SessionId, _DwellSec, {permit, _Ref}, _Rng) ->
+    undock(SessionId),
+    archive(SessionId, <<"permit">>).
+
+settle_ticket(SessionId, Amount, Pause, kiosk) ->
+    simulate_clock:sleep_simulated(Pause * 1000),
+    pay(SessionId, Amount),
+    undock(SessionId),
+    archive(SessionId, undefined);
+settle_ticket(SessionId, Amount, Pause, exit) ->
+    undock(SessionId),
+    simulate_clock:sleep_simulated(Pause * 1000),
+    pay(SessionId, Amount),
+    archive(SessionId, undefined).
 
 %%--------------------------------------------------------------------
 %% Fee model — flat EUR 2.50 / started hour, min EUR 0.50. Crude but
@@ -82,6 +118,13 @@ compute_fee_cents(DwellSec) ->
 card_id(ticket)      -> <<"card-", (hex(crypto:strong_rand_bytes(8)))/binary>>;
 card_id({permit, _}) -> undefined.
 
+%% A session-level bay id within the lot — lot-X-bay-N, N in 1..capacity.
+%% No occupancy tracking (bays can collide); see DESIGN notes.
+pick_bay(Rng, #parksim_lot{id = LotId, capacity = Cap}) ->
+    {N, Rng1} = uniform_int_s(Rng, 1, max(1, Cap)),
+    BayId = <<LotId/binary, "-bay-", (integer_to_binary(N))/binary>>,
+    {BayId, Rng1}.
+
 %%--------------------------------------------------------------------
 %% Distributions
 
@@ -94,6 +137,13 @@ sample_dwell(Rng, #parksim_lot{dwell_mu = Mu, dwell_sigma = Sigma}) ->
 roll_abandon(Rng) ->
     {U, Rng1} = rand:uniform_s(Rng),
     {U =< 0.007, Rng1}.
+
+roll_pay_point(Rng) ->
+    {U, Rng1} = rand:uniform_s(Rng),
+    case U =< 0.5 of
+        true  -> {kiosk, Rng1};
+        false -> {exit,  Rng1}
+    end.
 
 uniform_int_s(Rng, Lo, Hi) when Hi >= Lo ->
     {U, Rng1} = rand:uniform_s(Hi - Lo + 1, Rng),

@@ -23,6 +23,12 @@ init(AggregateId) ->
 execute(State, #{command_type := <<"initiate_parking_session">>} = P) ->
     route(initiate_parking_session_v1, maybe_initiate_parking_session,
           parking_session_initiated_v1, State, P);
+execute(State, #{command_type := <<"dock_vehicle">>} = P) ->
+    route(dock_vehicle_v1, maybe_dock_vehicle,
+          vehicle_docked_v1, State, P);
+execute(State, #{command_type := <<"undock_vehicle">>} = P) ->
+    route(undock_vehicle_v1, maybe_undock_vehicle,
+          vehicle_undocked_v1, State, P);
 execute(State, #{command_type := <<"capture_payment">>} = P) ->
     route(capture_payment_v1, maybe_capture_payment,
           payment_captured_v1, State, P);
