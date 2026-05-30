@@ -63,14 +63,32 @@ fire_one(State) ->
         State1#state.rng, State1#state.plates),
     PlateValue = maps:get(value, Plate),
     {U, Rng2} = rand:uniform_s(Rng1),
-    Credential = decide_credential(U, (State1#state.lot)#parksim_lot.permit_share,
-                                   PlateValue),
-    {ok, _} = simulate_visit:start_visit(#{
-        lot        => State1#state.lot,
-        plate      => PlateValue,
-        credential => Credential
-    }),
-    State1#state{rng = Rng2}.
+    Lot = State1#state.lot,
+    case lot_full(Lot) of
+        true ->
+            %% Lot at capacity — the car is turned away (no session). This
+            %% bounds occupancy: parked-now sits around capacity with
+            %% turnover instead of growing without limit.
+            State1#state{rng = Rng2};
+        false ->
+            Credential = decide_credential(
+                U, Lot#parksim_lot.permit_share, PlateValue),
+            {ok, _} = simulate_visit:start_visit(#{
+                lot        => Lot,
+                plate      => PlateValue,
+                credential => Credential
+            }),
+            State1#state{rng = Rng2}
+    end.
+
+%% Live occupancy from the read model (non-archived sessions for this lot).
+%% Fail OPEN if the read model isn't reachable yet (early boot) — admit
+%% rather than stall the simulation.
+lot_full(#parksim_lot{id = LotId, capacity = Cap}) ->
+    case catch project_parking_sessions_store:lot_in_progress(LotId) of
+        {ok, N} when is_integer(N) -> N >= Cap;
+        _                          -> false
+    end.
 
 %% A fraction of arrivals (the lot's permit_share) are permit holders;
 %% the rest take a ticket. Permit visits carry a permit_ref derived from

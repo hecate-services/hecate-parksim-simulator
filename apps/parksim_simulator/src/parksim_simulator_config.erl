@@ -94,43 +94,67 @@ lot_to_map(#parksim_lot{} = L) ->
 %%--------------------------------------------------------------------
 %% Presets (mirror PLAN_PARKSIM_TRAFFIC_MODEL.md §1, §2.3, §3, §6)
 
-grote_markt() ->
+%% A lot. dwell_median is the median parking duration (s). Capacity bounds
+%% occupancy (the arrivals worker turns cars away when full). Dwells are
+%% moderated for the demo so lots visibly cycle rather than staying full.
+lot(Id, Name, Profile, Cap, DwellMedianS, Sigma, PermitShare) ->
     #parksim_lot{
-        id            = <<"lot-leuven-grote-markt">>,
-        display_name  = <<"Grote Markt">>,
-        profile       = city_centre,
-        capacity      = 320,
-        dwell_median_s = 5400,
-        dwell_mu      = math:log(5400),
-        dwell_sigma   = 0.85,
-        permit_share  = 0.05}.
+        id             = Id,
+        display_name   = Name,
+        profile        = Profile,
+        capacity       = Cap,
+        dwell_median_s = DwellMedianS,
+        dwell_mu       = math:log(DwellMedianS),
+        dwell_sigma    = Sigma,
+        permit_share   = PermitShare}.
 
-station() ->
-    #parksim_lot{
-        id            = <<"lot-leuven-station">>,
-        display_name  = <<"Station">>,
-        profile       = station,
-        capacity      = 560,
-        dwell_median_s = 40000,
-        dwell_mu      = math:log(40000),
-        dwell_sigma   = 0.40,
-        permit_share  = 0.15}.
+%% Per-city landmark facilities (real parking landmarks per Belgian city),
+%% with distinct capacities. The `city' shape resolves to the tenant's set.
+leuven_lots() ->
+    [lot(<<"lot-leuven-grote-markt">>, <<"Grote Markt">>,  city_centre, 250, 5400,  0.85, 0.05),
+     lot(<<"lot-leuven-ladeuze">>,     <<"Ladeuzeplein">>, city_centre, 500, 7200,  0.80, 0.10),
+     lot(<<"lot-leuven-bruul">>,       <<"Bruul">>,        city_centre, 350, 5400,  0.85, 0.08),
+     lot(<<"lot-leuven-sint-jacob">>,  <<"Sint-Jacob">>,   residential, 300, 10800, 0.55, 0.45),
+     lot(<<"lot-leuven-station">>,     <<"Station">>,      station,     450, 14400, 0.45, 0.15)].
 
-residential() ->
-    #parksim_lot{
-        id            = <<"lot-leuven-residential">>,
-        display_name  = <<"Residential">>,
-        profile       = residential,
-        capacity      = 180,
-        dwell_median_s = 47000,
-        dwell_mu      = math:log(47000),
-        dwell_sigma   = 0.55,
-        permit_share  = 0.70}.
+brussels_lots() ->
+    [lot(<<"lot-brussels-grand-place">>, <<"Grand-Place">>,  city_centre, 350, 5400,  0.85, 0.05),
+     lot(<<"lot-brussels-sablon">>,      <<"Sablon">>,       city_centre, 300, 6000,  0.80, 0.08),
+     lot(<<"lot-brussels-louise">>,      <<"Louise">>,       city_centre, 550, 7200,  0.80, 0.10),
+     lot(<<"lot-brussels-midi">>,        <<"Brussel-Zuid">>, station,     700, 14400, 0.45, 0.15),
+     lot(<<"lot-brussels-atomium">>,     <<"Atomium">>,      residential, 450, 9000,  0.60, 0.20)].
+
+ghent_lots() ->
+    [lot(<<"lot-ghent-korenmarkt">>,   <<"Korenmarkt">>,        city_centre, 300, 5400,  0.85, 0.05),
+     lot(<<"lot-ghent-vrijdagmarkt">>, <<"Vrijdagmarkt">>,      city_centre, 350, 6000,  0.80, 0.08),
+     lot(<<"lot-ghent-gravensteen">>,  <<"Gravensteen">>,       city_centre, 250, 5400,  0.85, 0.05),
+     lot(<<"lot-ghent-sint-pieters">>, <<"Gent-Sint-Pieters">>, station,     600, 14400, 0.45, 0.15),
+     lot(<<"lot-ghent-dampoort">>,     <<"Dampoort">>,          station,     400, 12000, 0.50, 0.12)].
+
+antwerp_lots() ->
+    [lot(<<"lot-antwerp-groenplaats">>, <<"Groenplaats">>,        city_centre, 450, 5400,  0.85, 0.05),
+     lot(<<"lot-antwerp-meir">>,        <<"Meir">>,               city_centre, 500, 6000,  0.80, 0.08),
+     lot(<<"lot-antwerp-centraal">>,    <<"Antwerpen-Centraal">>, station,     650, 14400, 0.45, 0.15),
+     lot(<<"lot-antwerp-het-steen">>,   <<"Het Steen">>,          city_centre, 250, 5400,  0.85, 0.05),
+     lot(<<"lot-antwerp-eilandje">>,    <<"Eilandje (MAS)">>,     residential, 400, 9000,  0.60, 0.20)].
+
+city_lots(<<"brussels">>) -> brussels_lots();
+city_lots(<<"ghent">>)    -> ghent_lots();
+city_lots(<<"antwerp">>)  -> antwerp_lots();
+city_lots(_Leuven)        -> leuven_lots().
+
+%% The tenant/city this instance simulates (TENANT_ID; lowercased).
+tenant() ->
+    case os:getenv("TENANT_ID") of
+        false -> <<"leuven">>;
+        ""    -> <<"leuven">>;
+        S     -> list_to_binary(string:lowercase(S))
+    end.
 
 demo_preset() ->
     #parksim_preset{
         name = <<"demo">>,
-        lots = [grote_markt()],
+        lots = [hd(leuven_lots())],
         avg_sessions_per_day = 1200,
         peak_lambda_per_min  = 3.0,
         permit_roster_size   = 40,
@@ -139,17 +163,16 @@ demo_preset() ->
 city_preset() ->
     #parksim_preset{
         name = <<"city">>,
-        lots = [grote_markt(), station(), residential()],
+        lots = city_lots(tenant()),
         avg_sessions_per_day = 9000,
-        peak_lambda_per_min  = 12.0,
+        peak_lambda_per_min  = 14.0,
         permit_roster_size   = 200,
         plate_pool_size      = 2000}.
 
 stress_preset() ->
     #parksim_preset{
         name = <<"stress">>,
-        lots = [grote_markt(), station(), residential(),
-                grote_markt(), station(), residential()],
+        lots = leuven_lots() ++ brussels_lots(),
         avg_sessions_per_day = 36000,
         peak_lambda_per_min  = 45.0,
         permit_roster_size   = 800,
