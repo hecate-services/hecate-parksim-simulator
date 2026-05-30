@@ -1,0 +1,19 @@
+{application, project_fleet, [
+    {description, "Projects robotaxi vehicle events into a SQLite fleet read model"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {project_fleet_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        esqlite,
+        reckon_db,
+        evoq,
+        reckon_evoq,
+        hecate_om,
+        guide_vehicle_lifecycle
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

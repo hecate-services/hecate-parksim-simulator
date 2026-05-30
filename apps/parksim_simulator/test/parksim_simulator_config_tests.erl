@@ -4,12 +4,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("parksim_simulator/include/parksim_simulator_scenario.hrl").
 
-city_has_three_lots_test() ->
+%% city resolves to the tenant's 5 landmark lots (default tenant: leuven).
+city_lots_test() ->
     application:set_env(hecate_parksim, shape, "city"),
     application:set_env(hecate_parksim, time_scale, 1.0),
     application:set_env(hecate_parksim, seed, 0),
     P = parksim_simulator_config:preset(),
-    ?assertEqual(3, length(P#parksim_preset.lots)),
+    ?assertEqual(5, length(P#parksim_preset.lots)),
     ?assertEqual(<<"city">>, P#parksim_preset.name).
 
 unknown_shape_falls_back_to_city_test() ->
@@ -22,10 +23,11 @@ demo_preset_test() ->
     P = parksim_simulator_config:preset(),
     ?assertEqual(1, length(P#parksim_preset.lots)).
 
+%% stress = leuven ++ brussels landmark sets (5 + 5).
 stress_preset_test() ->
     application:set_env(hecate_parksim, shape, "stress"),
     P = parksim_simulator_config:preset(),
-    ?assertEqual(6, length(P#parksim_preset.lots)).
+    ?assertEqual(10, length(P#parksim_preset.lots)).
 
 %% Regression: PARKSIM_TIME_SCALE="30" (integer form) must parse, not
 %% crash. list_to_float/1 threw badarg on it, killing every visit's

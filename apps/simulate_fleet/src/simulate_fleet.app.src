@@ -1,0 +1,17 @@
+{application, simulate_fleet, [
+    {description, "Robotaxi fleet brain: in-memory kinematics + dispatch policy, driving the vehicle lifecycle"},
+    {vsn, "0.1.0"},
+    {registered, [simulate_fleet]},
+    {mod, {simulate_fleet_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        parksim_simulator,
+        simulate_clock,
+        guide_vehicle_lifecycle
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

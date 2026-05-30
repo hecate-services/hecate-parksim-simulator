@@ -7,7 +7,14 @@
 %%% latency-sensitive.
 -module(simulate_clock).
 
--export([now_iso8601/0, sleep_simulated/1, scale/0]).
+-export([now_iso8601/0, now_unix/0, sleep_simulated/1, scale/0]).
+
+%% @doc Current wall-clock time as unix seconds. The fleet brain uses this
+%% as its tick clock; it is real time (the sim compresses time via the
+%% per-tick sim-seconds delta, not by warping this).
+-spec now_unix() -> integer().
+now_unix() ->
+    erlang:system_time(second).
 
 %% @doc Current UTC time as an ISO-8601 binary.
 -spec now_iso8601() -> binary().

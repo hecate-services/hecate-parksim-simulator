@@ -1,0 +1,72 @@
+%%% @doc Event `vehicle_docked_at_facility_v1`. The robotaxi took a bay at a
+%%% service facility. (`_at_facility` suffix disambiguates from the
+%%% parking-session `vehicle_docked_v1` — module names are global.)
+-module(vehicle_docked_at_facility_v1).
+-behaviour(evoq_event).
+
+-export([event_type/0]).
+-export([new/1, from_map/1, to_map/1]).
+-export([get_vehicle_id/1, get_facility_id/1, get_bay_id/1, get_lat/1,
+         get_lng/1, get_docked_at/1]).
+
+-record(vehicle_docked_at_facility_v1, {
+    vehicle_id  :: binary() | undefined,
+    facility_id :: binary() | undefined,
+    bay_id      :: binary() | undefined,
+    lat         :: number() | undefined,
+    lng         :: number() | undefined,
+    docked_at   :: binary() | undefined
+}).
+
+-opaque t() :: #vehicle_docked_at_facility_v1{}.
+-export_type([t/0]).
+
+event_type() -> vehicle_docked_at_facility_v1.
+
+-spec new(map()) -> {ok, t()}.
+new(#{vehicle_id := Id} = P) ->
+    {ok, #vehicle_docked_at_facility_v1{
+        vehicle_id  = Id,
+        facility_id = maps:get(facility_id, P, undefined),
+        bay_id      = maps:get(bay_id, P, undefined),
+        lat         = maps:get(lat, P, undefined),
+        lng         = maps:get(lng, P, undefined),
+        docked_at   = maps:get(docked_at, P, undefined)
+    }}.
+
+-spec from_map(map()) -> {ok, t()}.
+from_map(#{<<"vehicle_id">> := Id} = M) ->
+    {ok, #vehicle_docked_at_facility_v1{
+        vehicle_id  = Id,
+        facility_id = maps:get(<<"facility_id">>, M, undefined),
+        bay_id      = maps:get(<<"bay_id">>, M, undefined),
+        lat         = maps:get(<<"lat">>, M, undefined),
+        lng         = maps:get(<<"lng">>, M, undefined),
+        docked_at   = maps:get(<<"docked_at">>, M, undefined)
+    }};
+from_map(#{vehicle_id := Id} = M) ->
+    {ok, #vehicle_docked_at_facility_v1{
+        vehicle_id  = Id,
+        facility_id = maps:get(facility_id, M, undefined),
+        bay_id      = maps:get(bay_id, M, undefined),
+        lat         = maps:get(lat, M, undefined),
+        lng         = maps:get(lng, M, undefined),
+        docked_at   = maps:get(docked_at, M, undefined)
+    }}.
+
+-spec to_map(t()) -> map().
+to_map(#vehicle_docked_at_facility_v1{} = E) ->
+    #{event_type   => <<"vehicle_docked_at_facility">>,
+      vehicle_id   => E#vehicle_docked_at_facility_v1.vehicle_id,
+      facility_id  => E#vehicle_docked_at_facility_v1.facility_id,
+      bay_id       => E#vehicle_docked_at_facility_v1.bay_id,
+      lat          => E#vehicle_docked_at_facility_v1.lat,
+      lng          => E#vehicle_docked_at_facility_v1.lng,
+      docked_at    => E#vehicle_docked_at_facility_v1.docked_at}.
+
+get_vehicle_id(#vehicle_docked_at_facility_v1{vehicle_id = V})   -> V.
+get_facility_id(#vehicle_docked_at_facility_v1{facility_id = V}) -> V.
+get_bay_id(#vehicle_docked_at_facility_v1{bay_id = V})           -> V.
+get_lat(#vehicle_docked_at_facility_v1{lat = V})                 -> V.
+get_lng(#vehicle_docked_at_facility_v1{lng = V})                 -> V.
+get_docked_at(#vehicle_docked_at_facility_v1{docked_at = V})     -> V.

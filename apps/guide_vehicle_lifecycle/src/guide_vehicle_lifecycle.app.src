@@ -1,0 +1,18 @@
+{application, guide_vehicle_lifecycle, [
+    {description, "Robotaxi vehicle lifecycle (commission -> cruise -> dispatch -> trip -> dock -> service -> release)"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {guide_vehicle_lifecycle_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        reckon_db,
+        evoq,
+        reckon_evoq,
+        parksim_simulator
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.

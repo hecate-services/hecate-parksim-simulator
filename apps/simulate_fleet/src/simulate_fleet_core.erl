@@ -1,0 +1,378 @@
+%%% @doc The PURE core of the robotaxi fleet brain.
+%%%
+%%% `tick/5' advances every vehicle one step and returns the new fleet state
+%%% plus a list of command EFFECTS (the milestone commands to dispatch into
+%%% the vehicle aggregate). It performs NO I/O — no store, no mesh, no clock,
+%%% no routing HTTP. Routing is injected as a `RouteFun' so the gen_server
+%%% can pass `route_leg:route/2' in production and a stub in tests.
+%%%
+%%% This is where the "physics" lives: vehicles move along their road
+%%% polyline, drain battery by distance, and fire a milestone when a leg
+%%% completes. Dispatch policy (take a fare / go charge) is decided here too.
+%%%
+%%% Effect = {Command :: atom(), Payload :: map()}  e.g.
+%%%   {dispatch_vehicle, #{vehicle_id => ..., trip_id => ..., ...}}
+-module(simulate_fleet_core).
+
+-include_lib("parksim_simulator/include/fleet.hrl").
+
+-export([new/3, tick/5, vehicles/1, snapshot/1]).
+%% Milestone callbacks — exported so advance/3 can dispatch via ?MODULE:F.
+-export([on_reach_pickup/2, on_reach_dropoff/2, on_reach_facility/2]).
+
+-record(core, {
+    operator   :: #operator{},
+    params     :: map(),
+    facilities :: [#facility{}],
+    bays_free  :: #{binary() => non_neg_integer()},
+    vehicles   :: #{binary() => #fveh{}},
+    rng        :: rand:state()
+}).
+
+-opaque t() :: #core{}.
+-export_type([t/0]).
+
+%% Routing: {Polyline :: [{Lat,Lng}], DistanceM :: number()}.
+-type route_fun() :: fun(({number(), number()}, {number(), number()}) ->
+                            {[{number(), number()}], number()}).
+
+%%--------------------------------------------------------------------
+%% Construction
+
+%% @doc A fresh fleet for `Operator', all vehicles freshly commissioned at
+%% the home depot with a full battery. Returns the core plus the commission
+%% effects to dispatch.
+-spec new(#operator{}, map(), rand:state()) -> {t(), [{atom(), map()}]}.
+new(#operator{fleet_size = N, home = HomeId} = Op, Params, Rng) ->
+    Facs = fleet_config:facilities(),
+    Home = facility(HomeId, Facs),
+    Bays = maps:from_list([{F#facility.id, F#facility.bays} || F <- Facs]),
+    Vehs0 = [new_vehicle(Op, I, Home) || I <- lists:seq(1, N)],
+    Vehicles = maps:from_list([{V#fveh.id, V} || V <- Vehs0]),
+    Effects = [{commission_vehicle,
+                #{vehicle_id  => V#fveh.id,
+                  company_id  => Op#operator.id,
+                  battery_pct => V#fveh.battery_pct,
+                  lat => V#fveh.lat, lng => V#fveh.lng}}
+               || V <- Vehs0],
+    Core = #core{operator = Op, params = Params, facilities = Facs,
+                 bays_free = Bays, vehicles = Vehicles, rng = Rng},
+    {Core, Effects}.
+
+new_vehicle(#operator{id = Op}, I, #facility{lat = Lat, lng = Lng}) ->
+    Id = iolist_to_binary([Op, "-taxi-", integer_to_list(I)]),
+    #fveh{id = Id, phase = commissioned, lat = Lat, lng = Lng,
+          heading = 0.0, battery_pct = 100.0}.
+
+%%--------------------------------------------------------------------
+%% Tick
+
+%% @doc Advance the fleet one tick. `TickSimSecs' is how much sim time
+%% elapsed since the last tick; `NewRequests' are ride requests that arose
+%% this tick; `RouteFun' computes a {polyline, distance} for a leg. Returns
+%% the new core, the number of effects, and the command effects produced.
+-spec tick(t(), integer(), number(), [#ride_request{}], route_fun()) ->
+    {t(), number(), [{atom(), map()}]}.
+tick(#core{} = Core0, SimUnix, TickSimSecs, NewRequests, RouteFun) ->
+    Ctx0 = #{core => Core0, requests => NewRequests, sim => SimUnix,
+             tick_sim_secs => TickSimSecs,
+             route => RouteFun, effects => []},
+    Ids = maps:keys(Core0#core.vehicles),
+    Ctx1 = lists:foldl(fun(Id, Ctx) -> step(Id, Ctx) end, Ctx0, Ids),
+    #{core := Core1, effects := Effects} = Ctx1,
+    {Core1, length(Effects), lists:reverse(Effects)}.
+
+%%--------------------------------------------------------------------
+%% Per-vehicle step
+
+step(Id, Ctx) ->
+    Core = maps:get(core, Ctx),
+    V = maps:get(Id, Core#core.vehicles),
+    step_phase(V#fveh.phase, V, Ctx).
+
+%% Idle (commissioned or cruising): decide between a fare and a charge run.
+step_phase(P, V, Ctx) when P =:= commissioned; P =:= cruising ->
+    #{core := Core} = Ctx,
+    Params = Core#core.params,
+    case V#fveh.battery_pct =< maps:get(return_threshold_pct, Params) of
+        true  -> begin_return(V, Ctx);
+        false -> try_take_fare(V, Ctx)
+    end;
+step_phase(dispatched, V, Ctx) -> advance(V, Ctx, on_reach_pickup);
+step_phase(on_trip,    V, Ctx) -> advance(V, Ctx, on_reach_dropoff);
+step_phase(returning,  V, Ctx) -> advance(V, Ctx, on_reach_facility);
+step_phase(servicing,  V, Ctx) -> maybe_finish_service(V, Ctx);
+step_phase(depleted,   V, Ctx) -> maybe_tow(V, Ctx);
+step_phase(docked,     V, Ctx) -> put_veh(V, Ctx).   %% transient; serviced next tick
+
+%%--------------------------------------------------------------------
+%% Idle decisions
+
+try_take_fare(V, Ctx) ->
+    #{requests := Reqs, core := Core} = Ctx,
+    MinPct = maps:get(min_dispatch_pct, Core#core.params),
+    case {Reqs, V#fveh.battery_pct >= MinPct} of
+        {[Req | Rest], true} ->
+            Route = maps:get(route, Ctx),
+            {Path, _D} = Route({V#fveh.lat, V#fveh.lng}, Req#ride_request.pickup),
+            V1 = V#fveh{phase = dispatched, leg = to_pickup, path = Path,
+                        trip_id = trip_id(Req), pickup = Req#ride_request.pickup,
+                        dropoff = Req#ride_request.dropoff, trip_m = 0.0},
+            Ctx1 = Ctx#{requests => Rest},
+            emit(V1, {dispatch_vehicle,
+                      #{vehicle_id => V1#fveh.id, trip_id => V1#fveh.trip_id,
+                        pickup_lat => lat_of(V1#fveh.pickup),
+                        pickup_lng => lng_of(V1#fveh.pickup),
+                        dropoff_lat => lat_of(V1#fveh.dropoff),
+                        dropoff_lng => lng_of(V1#fveh.dropoff)}},
+                 put_veh(V1, Ctx1));
+        _ ->
+            put_veh(V, Ctx)   %% no fare (or too flat) — idle this tick
+    end.
+
+begin_return(V, Ctx) ->
+    #{core := Core} = Ctx,
+    case nearest_free_facility(V, Core) of
+        none ->
+            put_veh(V, Ctx);   %% no free bay anywhere — wait, retry next tick
+        #facility{id = FacId} = Fac ->
+            Route = maps:get(route, Ctx),
+            {Path, _D} = Route({V#fveh.lat, V#fveh.lng},
+                               {Fac#facility.lat, Fac#facility.lng}),
+            Core1 = take_bay(Core, FacId),   %% reserve the bay now
+            V1 = V#fveh{phase = returning, leg = to_facility, path = Path,
+                        dest_facility = FacId},
+            emit(V1, {return_vehicle,
+                      #{vehicle_id => V1#fveh.id, facility_id => FacId}},
+                 put_veh(V1, Ctx#{core => Core1}))
+    end.
+
+%%--------------------------------------------------------------------
+%% Movement
+
+advance(V, Ctx, OnReach) ->
+    #{core := Core} = Ctx,
+    Params = Core#core.params,
+    BudgetM = maps:get(cruise_speed_mps, Params) * tick_sim_secs(Ctx),
+    {NewPath, NewPos, MovedM, Done} =
+        walk(V#fveh.path, {V#fveh.lat, V#fveh.lng}, BudgetM),
+    Drain = (MovedM / 1000.0) * maps:get(battery_drain_per_km, Params),
+    Battery = V#fveh.battery_pct - Drain,
+    V1 = V#fveh{path = NewPath, lat = lat_of(NewPos), lng = lng_of(NewPos),
+                battery_pct = Battery, trip_m = V#fveh.trip_m + MovedM},
+    case Battery =< 0.0 of
+        true  -> deplete(V1, Ctx);
+        false ->
+            case Done of
+                true  -> ?MODULE:OnReach(V1, Ctx);
+                false -> put_veh(V1, Ctx)
+            end
+    end.
+
+%% Walk along the polyline consuming up to BudgetM metres.
+walk([], Pos, _Budget) -> {[], Pos, 0.0, true};
+walk(Path, Pos, Budget) -> walk(Path, Pos, Budget, 0.0).
+
+walk([], Pos, _Budget, Moved) -> {[], Pos, Moved, true};
+walk([Next | Rest] = Path, Pos, Budget, Moved) ->
+    D = route_leg:haversine_m(Pos, Next),
+    case D =< Budget of
+        true ->
+            walk(Rest, Next, Budget - D, Moved + D);
+        false ->
+            F = case D < 1.0e-9 of true -> 1.0; false -> Budget / D end,
+            NewPos = route_leg:interpolate(Pos, Next, F),
+            {Path, NewPos, Moved + Budget, false}
+    end.
+
+%%--------------------------------------------------------------------
+%% Leg-completion milestones
+
+on_reach_pickup(V, Ctx) ->
+    Route = maps:get(route, Ctx),
+    {Path, _D} = Route(V#fveh.pickup, V#fveh.dropoff),
+    V1 = V#fveh{phase = on_trip, leg = to_dropoff, path = Path, trip_m = 0.0},
+    emit(V1, {pick_up_passenger,
+              #{vehicle_id => V1#fveh.id,
+                lat => V1#fveh.lat, lng => V1#fveh.lng}},
+         put_veh(V1, Ctx)).
+
+on_reach_dropoff(V, Ctx) ->
+    #{core := Core} = Ctx,
+    Fare = fare_cents(V#fveh.trip_m, Core#core.params),
+    V1 = V#fveh{phase = cruising, leg = none, path = [],
+                trip_id = undefined, pickup = undefined, dropoff = undefined},
+    emit(V1, {drop_off_passenger,
+              #{vehicle_id => V1#fveh.id, fare_cents => Fare,
+                lat => V1#fveh.lat, lng => V1#fveh.lng}},
+         put_veh(V1, Ctx)).
+
+on_reach_facility(V, Ctx) ->
+    #{core := Core, sim := SimUnix} = Ctx,
+    FacId = V#fveh.dest_facility,
+    Fac = facility(FacId, Core#core.facilities),
+    {Kind, Ctx1} = choose_service(V, Fac, Ctx),
+    Dur = service_secs(Kind, Core#core.params),
+    Bay = bay_id(FacId, V),
+    V1 = V#fveh{phase = servicing, leg = none, path = [],
+                dest_bay = Bay, service_kind = Kind,
+                service_until = SimUnix + Dur,
+                lat = Fac#facility.lat, lng = Fac#facility.lng},
+    %% Two milestones: dock, then begin service.
+    Ctx2 = add_effect({dock_at_facility,
+                       #{vehicle_id => V1#fveh.id, facility_id => FacId,
+                         bay_id => Bay, lat => Fac#facility.lat,
+                         lng => Fac#facility.lng}}, Ctx1),
+    emit(V1, {service_vehicle, #{vehicle_id => V1#fveh.id, kind => Kind}},
+         put_veh(V1, Ctx2)).
+
+%%--------------------------------------------------------------------
+%% Service completion + tow
+
+maybe_finish_service(V, Ctx) ->
+    #{sim := SimUnix, core := Core} = Ctx,
+    case SimUnix >= V#fveh.service_until of
+        false -> put_veh(V, Ctx);
+        true  ->
+            Battery = case V#fveh.service_kind of
+                <<"charge">> -> 100.0;
+                _            -> V#fveh.battery_pct
+            end,
+            Core1 = free_bay(Core, V#fveh.dest_facility),
+            V1 = V#fveh{phase = cruising, battery_pct = Battery,
+                        dest_facility = undefined, dest_bay = undefined,
+                        service_kind = undefined, service_until = undefined},
+            emit(V1, {release_vehicle, #{vehicle_id => V1#fveh.id}},
+                 put_veh(V1, Ctx#{core => Core1}))
+    end.
+
+%% A stranded vehicle is towed after `tow_secs'; the tow routes it to the
+%% nearest free facility (phase returning, so it docks+charges normally).
+maybe_tow(V, Ctx) ->
+    #{sim := SimUnix, core := Core} = Ctx,
+    case is_integer(V#fveh.tow_until) andalso SimUnix >= V#fveh.tow_until of
+        false -> put_veh(V, Ctx);
+        true  ->
+            case nearest_free_facility(V, Core) of
+                none -> put_veh(V, Ctx);
+                #facility{id = FacId} = Fac ->
+                    Route = maps:get(route, Ctx),
+                    {Path, _D} = Route({V#fveh.lat, V#fveh.lng},
+                                       {Fac#facility.lat, Fac#facility.lng}),
+                    Core1 = take_bay(Core, FacId),
+                    V1 = V#fveh{phase = returning, leg = to_facility, path = Path,
+                                dest_facility = FacId, tow_until = undefined,
+                                battery_pct = 5.0},  %% tow gives a limp charge
+                    emit(V1, {return_vehicle,
+                              #{vehicle_id => V1#fveh.id, facility_id => FacId}},
+                         put_veh(V1, Ctx#{core => Core1}))
+            end
+    end.
+
+deplete(V, Ctx) ->
+    #{sim := SimUnix, core := Core} = Ctx,
+    TowAt = SimUnix + maps:get(tow_secs, Core#core.params),
+    V1 = V#fveh{phase = depleted, battery_pct = 0.0, leg = none, path = [],
+                tow_until = TowAt},
+    emit(V1, {deplete_battery,
+              #{vehicle_id => V1#fveh.id, lat => V1#fveh.lat, lng => V1#fveh.lng}},
+         put_veh(V1, Ctx)).
+
+%%--------------------------------------------------------------------
+%% Bays + facility selection
+
+nearest_free_facility(V, #core{facilities = Facs, bays_free = Free}) ->
+    Avail = [F || F <- Facs, maps:get(F#facility.id, Free, 0) > 0],
+    case Avail of
+        [] -> none;
+        _  ->
+            Pos = {V#fveh.lat, V#fveh.lng},
+            [Best | _] = lists:sort(
+                fun(A, B) ->
+                    route_leg:haversine_m(Pos, {A#facility.lat, A#facility.lng})
+                        =< route_leg:haversine_m(Pos, {B#facility.lat, B#facility.lng})
+                end, Avail),
+            Best
+    end.
+
+take_bay(#core{bays_free = Free} = Core, FacId) ->
+    Core#core{bays_free =
+        maps:update_with(FacId, fun(N) -> max(0, N - 1) end, 0, Free)}.
+
+free_bay(#core{} = Core, undefined) -> Core;
+free_bay(#core{bays_free = Free} = Core, FacId) ->
+    Core#core{bays_free = maps:update_with(FacId, fun(N) -> N + 1 end, 1, Free)}.
+
+%% Pick a service kind: charge if low, else occasionally clean/maintain.
+choose_service(V, #facility{kinds = Kinds}, Ctx) ->
+    #{core := Core} = Ctx,
+    Thr = maps:get(return_threshold_pct, Core#core.params),
+    case V#fveh.battery_pct =< Thr of
+        true  -> {<<"charge">>, Ctx};
+        false ->
+            {U, Rng1} = rand:uniform_s(Core#core.rng),
+            Ctx1 = Ctx#{core => Core#core{rng = Rng1}},
+            {pick_noncharge(Kinds, U), Ctx1}
+    end.
+
+pick_noncharge(Kinds, U) ->
+    case [K || K <- Kinds, K =/= <<"charge">>] of
+        []     -> <<"charge">>;
+        Others -> lists:nth(trunc(U * length(Others)) + 1, Others)
+    end.
+
+%%--------------------------------------------------------------------
+%% Accessors
+
+-spec vehicles(t()) -> [#fveh{}].
+vehicles(#core{vehicles = V}) -> maps:values(V).
+
+%% @doc A light per-vehicle snapshot for telemetry / inspection.
+-spec snapshot(t()) -> [map()].
+snapshot(#core{vehicles = V}) ->
+    [#{vehicle_id => F#fveh.id, phase => F#fveh.phase,
+       lat => F#fveh.lat, lng => F#fveh.lng,
+       heading => F#fveh.heading, battery_pct => round1(F#fveh.battery_pct)}
+     || F <- maps:values(V)].
+
+%%--------------------------------------------------------------------
+%% Effect + state plumbing
+
+emit(V, Effect, Ctx) ->
+    add_effect(Effect, put_veh(V, Ctx)).
+
+add_effect(Effect, Ctx) ->
+    Ctx#{effects => [Effect | maps:get(effects, Ctx)]}.
+
+put_veh(V, Ctx) ->
+    Core = maps:get(core, Ctx),
+    Vehicles = maps:put(V#fveh.id, V, Core#core.vehicles),
+    Ctx#{core => Core#core{vehicles = Vehicles}}.
+
+%%--------------------------------------------------------------------
+%% Small helpers
+
+facility(Id, Facs) ->
+    case lists:keyfind(Id, #facility.id, Facs) of
+        #facility{} = F -> F;
+        false           -> hd(Facs)
+    end.
+
+tick_sim_secs(Ctx) -> maps:get(tick_sim_secs, Ctx, 1.0).
+
+trip_id(#ride_request{id = Id}) -> <<"trip-", Id/binary>>.
+
+fare_cents(Metres, Params) ->
+    Km = Metres / 1000.0,
+    maps:get(fare_base_cents, Params) + round(Km * maps:get(fare_per_km_cents, Params)).
+
+service_secs(Kind, Params) ->
+    maps:get(Kind, maps:get(service_secs, Params), 600).
+
+bay_id(FacId, #fveh{id = VId}) ->
+    iolist_to_binary([FacId, "-bay-", VId]).
+
+lat_of({Lat, _}) -> Lat.
+lng_of({_, Lng}) -> Lng.
+
+round1(N) -> erlang:round(N * 10) / 10.

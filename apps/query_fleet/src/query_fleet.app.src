@@ -1,0 +1,17 @@
+{application, query_fleet, [
+    {description, "HTTP query API for the robotaxi fleet read models"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {query_fleet_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        cowboy,
+        jsx,
+        esqlite,
+        project_fleet
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]}
+]}.
