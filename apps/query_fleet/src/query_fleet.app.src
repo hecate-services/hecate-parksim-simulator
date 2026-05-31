@@ -1,6 +1,6 @@
 {application, query_fleet, [
     {description, "HTTP query API for the robotaxi fleet read models"},
-    {vsn, "0.1.0"},
+    {vsn, "0.2.0"},
     {registered, []},
     {mod, {query_fleet_app, []}},
     {applications, [

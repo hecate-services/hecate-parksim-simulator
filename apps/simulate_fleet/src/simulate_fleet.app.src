@@ -1,6 +1,6 @@
 {application, simulate_fleet, [
     {description, "Robotaxi fleet brain: in-memory kinematics + dispatch policy, driving the vehicle lifecycle"},
-    {vsn, "0.1.0"},
+    {vsn, "0.2.0"},
     {registered, [simulate_fleet]},
     {mod, {simulate_fleet_app, []}},
     {applications, [

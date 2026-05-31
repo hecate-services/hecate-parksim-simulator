@@ -4,8 +4,16 @@ All notable changes to **hecate-parksim-simulator** are documented here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-31
+
 ### Changed
 
+- **Robotaxi / ClankerCab reframe** (170e0f3). Reframed the simulator as a
+  federated autonomous-cab fleet: `guide_vehicle_lifecycle`, `project_fleet`,
+  `query_fleet`, `simulate_fleet` emitting per-operator
+  `fleet/<tenant>/{summary,telemetry}` facts on the `io.macula` mesh — the
+  source the realm-side ClankerCab LiveView consumes. (Parking-session apps
+  retained alongside.)
 - **Physical-device-first rebuild** (PLAN_PARKSIM_LANE_EQUIPMENT.md §7).
   The simulator now emulates the lane *hardware* instead of firing
   logical session commands. Retired the `simulate_sessions` app;

@@ -1,6 +1,6 @@
 {application, parksim_simulator, [
     {description, "Shared simulator infrastructure (config, clock, plates) for hecate-parksim"},
-    {vsn, "0.1.0"},
+    {vsn, "0.2.0"},
     {registered, []},
     {mod, {parksim_simulator_app, []}},
     {applications, [kernel, stdlib, crypto, inets, ssl, jsx, hecate_om]},

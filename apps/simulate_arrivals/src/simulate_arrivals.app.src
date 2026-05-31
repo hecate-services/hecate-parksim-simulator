@@ -1,6 +1,6 @@
 {application, simulate_arrivals, [
     {description, "NHPP-driven vehicle arrivals per lot"},
-    {vsn, "0.1.0"},
+    {vsn, "0.2.0"},
     {registered, []},
     {applications, [kernel, stdlib, parksim_simulator, simulate_clock,
                     simulate_visit]},

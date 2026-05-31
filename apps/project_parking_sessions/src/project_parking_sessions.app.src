@@ -1,6 +1,6 @@
 {application, project_parking_sessions, [
     {description, "PRJ: projects parking_session events into a SQLite read model"},
-    {vsn, "0.1.0"},
+    {vsn, "0.2.0"},
     {registered, []},
     {mod, {project_parking_sessions_app, []}},
     {applications, [

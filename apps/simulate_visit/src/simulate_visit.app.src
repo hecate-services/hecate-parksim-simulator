@@ -1,6 +1,6 @@
 {application, simulate_visit, [
     {description, "Physical-device-first visit walk: emulates a driver+vehicle through the lane equipment"},
-    {vsn, "0.1.0"},
+    {vsn, "0.2.0"},
     {registered, []},
     {applications, [kernel, stdlib, parksim_simulator, simulate_clock]},
     {env, []},
