@@ -1,0 +1,45 @@
+# Quadlet unit for the ClankerCab "ghent" operator (brand: Volt).
+#
+# One of four explicit per-tenant parksim units (leuven/brussels/ghent/
+# antwerp). Each runs the same image with a different TENANT_ID; the tenant
+# is the operator id and is baked into the fleet/<tenant>/{summary,telemetry}
+# mesh topics the realm-side ClankerCab demo consumes.
+#
+# Runs on Hecate INFRASTRUCTURE nodes. Lives in hecate-gitops/system/ and is
+# symlinked into /etc/containers/systemd/ by the reconciler. Managed by
+# system-wide systemd, not a user instance.
+
+[Unit]
+Description=Hecate service: hecate-parksim ghent (ClankerCab / Volt)
+After=network-online.target macula-station.service
+Wants=network-online.target
+Requires=macula-station.service
+
+[Container]
+ContainerName=hecate-parksim-ghent
+Image=ghcr.io/hecate-services/hecate-parksim-simulator:latest
+AutoUpdate=registry
+
+Environment=TENANT_ID=ghent
+
+# Realm-issued service-principal cert (read-only).
+Volume=/etc/hecate/secrets/hecate-parksim-ghent:/etc/hecate/secrets:ro,Z
+
+# Per-tenant state — bulk drive on the beam nodes (`/bulk0`).
+Volume=/bulk0/hecate/hecate-parksim-ghent:/var/lib/hecate-parksim-simulator:Z
+
+# Local macula-station socket (the SDK speaks to this).
+Volume=/run/macula:/run/macula:Z
+
+# Run as the dedicated `hecate` service user, never root.
+User=hecate
+Group=hecate
+
+EnvironmentFile=/etc/hecate/gitops/system/hecate-parksim-ghent.env
+
+[Service]
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
